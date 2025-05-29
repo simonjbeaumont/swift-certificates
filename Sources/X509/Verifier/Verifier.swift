@@ -76,7 +76,7 @@ public struct Verifier<Policy: VerifierPolicy> {
             diagnosticCallback?(.searchingForIssuerOfPartialChain(nextPartialCandidate))
             // We want to search for parents. Our preferred parent comes from the root store, as this will potentially
             // produce smaller chains.
-            if var rootParents = rootCertificates[nextPartialCandidate.currentTip.issuer] {
+            if var rootParents = rootCertificates[relaxed: nextPartialCandidate.currentTip.issuer] {
                 // We then want to sort by suitability.
                 rootParents.sortBySuitabilityForIssuing(certificate: nextPartialCandidate.currentTip)
                 diagnosticCallback?(
@@ -110,7 +110,7 @@ public struct Verifier<Policy: VerifierPolicy> {
                 }
             }
 
-            if var intermediateParents = intermediates[nextPartialCandidate.currentTip.issuer] {
+            if var intermediateParents = intermediates[relaxed: nextPartialCandidate.currentTip.issuer] {
                 // We then want to sort by suitability.
                 intermediateParents.sortBySuitabilityForIssuing(certificate: nextPartialCandidate.currentTip)
                 diagnosticCallback?(
@@ -283,5 +283,28 @@ extension UnverifiedCertificateChain {
 extension Certificate.Extensions {
     fileprivate var subjectAlternativeNameBytes: ArraySlice<UInt8>? {
         return self[oid: .X509ExtensionID.subjectAlternativeName].map { $0.value }
+    }
+}
+
+extension DistinguishedName {
+    @inlinable
+    func relaxedEquals(_ other: Self) -> Bool {
+        self.description == other.description
+    }
+}
+
+extension CertificateStore {
+    @inlinable
+    subscript(relaxed subject: DistinguishedName) -> [Certificate]? {
+        get {
+            self._certificates.first { key, _ in key.relaxedEquals(subject) }?.value
+        }
+        set {
+            if let existingMatch = self._certificates.first(where: { key, _ in key.relaxedEquals(subject) }) {
+                self._certificates[existingMatch.key] = newValue
+            } else {
+                self._certificates[subject] = newValue
+            }
+        }
     }
 }
